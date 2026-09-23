@@ -30,7 +30,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:text="@string/manual_help"
-        android:textColor="@color/text_secondary"
+        android:textColor="@color/on_bg_muted"
         android:textSize="12sp" />
 
     <com.google.android.material.textfield.TextInputLayout

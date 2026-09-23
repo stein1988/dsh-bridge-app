@@ -1,20 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
-    <style name="Theme.DshBridge" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/brand_primary</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorPrimaryContainer">@color/brand_container</item>
-        <item name="android:windowBackground">@color/app_bg</item>
+    <!-- 应用外壳统一走 Material3 **Dark**：主页/扫码页都是纯黑设计，
+         用 DayNight 会在系统浅色模式下把组件渲染成浅色、与黑底冲突。 -->
+    <style name="Theme.DshBridge" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/on_accent</item>
+        <item name="colorPrimaryContainer">@color/accent_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_bg</item>
+
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/on_bg</item>
+        <item name="colorSurfaceVariant">@color/surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_bg_muted</item>
+        <item name="colorOutline">@color/stroke_strong</item>
+        <item name="colorOutlineVariant">@color/stroke</item>
+        <item name="colorError">@color/danger</item>
+
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:textColorPrimary">@color/on_bg</item>
+        <item name="android:textColorSecondary">@color/on_bg_muted</item>
+        <!-- 深色主题下状态栏/导航栏图标本来就该是浅色，这里显式声明避免被系统浅色模式带偏 -->
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <!-- 会话页：无应用内标题栏，网页铺满可用区域。
-         刻意不启用 edge-to-edge：dsh-bridge 的移动端样式用 env(safe-area-inset-top)
-         预留顶栏安全区，而在非 edge-to-edge 的 WebView 里该值为 0、网页从状态栏下方开始，
-         正好不会与网页自己的 52px 顶栏重叠。若要改成真·沉浸式，见 WebViewActivity 的
-         EDGE_TO_EDGE 常量（需同时给网页补 viewport-fit=cover）。 -->
+    <!-- 会话页：网页自己绘制到系统栏之下，背景用黑色避免加载瞬间闪白 -->
     <style name="Theme.DshBridge.Web" parent="Theme.DshBridge">
         <item name="android:windowBackground">@color/webview_bg</item>
+    </style>
+
+    <!-- 扫码页：纯黑、无标题栏 -->
+    <style name="Theme.DshBridge.Scanner" parent="Theme.DshBridge">
+        <item name="android:windowBackground">@color/bg</item>
     </style>
 
 </resources>

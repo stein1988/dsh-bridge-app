@@ -61,4 +61,49 @@ object Insets {
         }
         ViewCompat.requestApplyInsets(root)
     }
+
+    /**
+     * 只把**顶部**系统栏/刘海高度作为 padding 加到某个控件上。
+     *
+     * 用于扫码页这类"内容要全屏铺满、但控件不能钻进状态栏"的场景：
+     * 相机预览必须整屏，不能给根布局加 padding；只让顶栏控件自己让位即可。
+     */
+    fun applyTopInsetPadding(view: View) {
+        // 先记下 XML 里声明的原始 padding：insets 回调可能触发多次，
+        // 若每次都以"当前 padding"为基准叠加，会越加越多；覆盖式赋值又会丢掉 XML 里的留白。
+        val baseLeft = view.paddingLeft
+        val baseTop = view.paddingTop
+        val baseRight = view.paddingRight
+        val baseBottom = view.paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(view) { target, insets ->
+            val top = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            ).top
+            target.setPadding(baseLeft, baseTop + top, baseRight, baseBottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(view)
+    }
+
+    /** 只把**底部** insets（含软键盘）作为 padding 加到某个控件上。 */
+    fun applyBottomInsetPadding(view: View) {
+        val baseLeft = view.paddingLeft
+        val baseTop = view.paddingTop
+        val baseRight = view.paddingRight
+        val baseBottom = view.paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(view) { target, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            target.setPadding(
+                baseLeft,
+                baseTop,
+                baseRight,
+                baseBottom + max(bars.bottom, ime.bottom),
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(view)
+    }
 }

@@ -27,8 +27,8 @@ android {
         applicationId = "com.dshbridge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.1.0"
         resourceConfigurations += listOf("zh", "en")
     }
 
@@ -72,6 +72,8 @@ android {
 
     buildFeatures {
         viewBinding = true
+        // 首页右下角要显示当前版本号（BuildConfig.VERSION_NAME），AGP 8 默认不生成 BuildConfig
+        buildConfig = true
     }
 }
 
@@ -87,8 +89,10 @@ dependencies {
     // 访问密码的加密存储（AES256-GCM + Android Keystore 主密钥）
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // 二维码扫描（封装 ZXing，自带扫码 Activity，无需 ML Kit / Google Play 服务）
+    // 二维码扫描：Camera 实时解码用 zxing-android-embedded 的 DecoratedBarcodeView（可嵌自定义布局）；
+    // 「从相册选择」的图片解码直接用 ZXing core，所以这里显式声明它（此前只是传递依赖，不该依赖这个巧合）
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("com.google.zxing:core:3.5.3")
 
     // 原生登录：POST /__dsh_bridge__/login 换取会话 cookie
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

@@ -1,14 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="brand_primary">#4D6BFE</color>
-    <color name="brand_primary_dark">#3A55D9</color>
-    <color name="brand_container">#E4E9FF</color>
-    <color name="app_bg">#F6F7FB</color>
-    <color name="webview_bg">#FFFFFF</color>
-    <color name="text_primary">#1A1D24</color>
-    <color name="text_secondary">#6B7280</color>
-    <color name="error">#D32F2F</color>
-    <color name="badge_bg">#E8F5E9</color>
-    <color name="badge_text">#2E7D32</color>
-    <color name="ic_launcher_background">#4D6BFE</color>
+    <!-- 全黑主题调色板：应用内强制暗色，不跟随系统浅色模式，
+         否则浅色模式下会出现"白底 + 深色图标压在黑背景上"的错乱。 -->
+
+    <!-- 背景与容器 -->
+    <color name="bg">#FF000000</color>
+    <color name="surface">#FF101013</color>
+    <color name="surface_pressed">#FF1B1B20</color>
+    <color name="stroke">#1FFFFFFF</color>
+    <color name="stroke_strong">#33FFFFFF</color>
+
+    <!-- 文字 -->
+    <color name="on_bg">#FFF2F3F5</color>
+    <color name="on_bg_muted">#FF9AA0A6</color>
+    <color name="on_bg_faint">#FF6B7075</color>
+
+    <!-- 强调色（取自 dsh-bridge 的品牌蓝） -->
+    <color name="accent">#FF4D6BFE</color>
+    <color name="accent_pressed">#FF3A55D9</color>
+    <color name="accent_container">#FF18213D</color>
+    <color name="on_accent">#FFFFFFFF</color>
+
+    <!-- 状态指示 -->
+    <color name="ok">#FF4ADE80</color>
+    <color name="offline">#FF74797F</color>
+    <color name="danger">#FFF87171</color>
+    <color name="warn">#FFFBBF24</color>
+
+    <!-- 会话页与扫码页 -->
+    <color name="webview_bg">#FF000000</color>
+    <color name="scanner_mask">#B3000000</color>
+
+    <color name="ic_launcher_background">#FF4D6BFE</color>
+
+    <!-- 兼容旧引用（凭据未加密提示、徽标等） -->
+    <color name="error">#FFF87171</color>
+    <color name="badge_bg">#FF16281C</color>
+    <color name="badge_text">#FF6EE7A0</color>
 </resources>

@@ -43,7 +43,28 @@ data class LinkRecord(
     val displayTitle: String
         get() = title.ifBlank { url.toHttpUrlOrNull()?.host ?: url }
 
+    /**
+     * 是否为局域网地址（本机 / 私有网段）。
+     * 卡片上据此显示「局域网 · …」或「远程 · …」，一眼能看出走的是家里还是公网。
+     */
+    val isLocal: Boolean
+        get() {
+            val host = url.toHttpUrlOrNull()?.host?.lowercase() ?: return false
+            if (host == "localhost" || host.endsWith(".local") || host == "::1") return true
+
+            val match = IPV4.find(host) ?: return false
+            val (a, b) = match.destructured
+            val first = a.toIntOrNull() ?: return false
+            val second = b.toIntOrNull() ?: return false
+            return first == 10 ||
+                first == 127 ||
+                (first == 172 && second in 16..31) ||
+                (first == 192 && second == 168)
+        }
+
     companion object {
+        private val IPV4 = Regex("""^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$""")
+
         fun fromJson(o: JSONObject): LinkRecord? {
             val id = o.optString("id").takeIf { it.isNotBlank() } ?: return null
             val url = o.optString("url").takeIf { it.isNotBlank() } ?: return null

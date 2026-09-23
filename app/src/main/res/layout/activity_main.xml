@@ -4,32 +4,49 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/app_bg">
+    android:background="@color/bg">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp">
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
+        <!-- 顶部：大标题 + 状态副标题（参照目标布局：标题下紧跟一行状态说明） -->
+        <TextView
+            android:id="@+id/tvTitle"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="@color/app_bg"
-            android:title="@string/home_title" />
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:letterSpacing="-0.02"
+            android:text="@string/home_title"
+            android:textColor="@color/on_bg"
+            android:textSize="26sp"
+            android:textStyle="bold" />
 
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/on_bg_muted"
+            android:textSize="13sp" />
+
+        <!-- 链接列表 -->
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:layout_marginTop="16dp">
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recycler"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
-                android:paddingTop="4dp"
-                android:paddingBottom="88dp" />
+                android:paddingBottom="6dp"
+                android:scrollbars="none" />
 
             <LinearLayout
                 android:id="@+id/emptyState"
@@ -37,48 +54,114 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:orientation="vertical"
-                android:paddingBottom="72dp"
+                android:paddingBottom="24dp"
                 android:visibility="gone">
 
                 <ImageView
-                    android:layout_width="72dp"
-                    android:layout_height="72dp"
-                    android:alpha="0.3"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:alpha="0.35"
                     android:contentDescription="@string/cd_empty_icon"
                     android:src="@drawable/ic_link"
-                    android:tint="@color/text_secondary" />
+                    app:tint="@color/on_bg_muted" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_marginTop="14dp"
                     android:text="@string/empty_title"
-                    android:textColor="@color/text_primary"
-                    android:textSize="17sp"
+                    android:textColor="@color/on_bg"
+                    android:textSize="16sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="6dp"
                     android:gravity="center"
-                    android:lineSpacingExtra="4dp"
-                    android:paddingStart="48dp"
-                    android:paddingEnd="48dp"
+                    android:lineSpacingExtra="3dp"
+                    android:paddingStart="32dp"
+                    android:paddingEnd="32dp"
                     android:text="@string/empty_desc"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="14sp" />
+                    android:textColor="@color/on_bg_muted"
+                    android:textSize="13sp" />
             </LinearLayout>
         </FrameLayout>
-    </LinearLayout>
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-        android:id="@+id/fabAdd"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:text="@string/fab_add"
-        app:icon="@drawable/ic_add" />
+        <!-- 添加：水平两个按钮（左：文本链接　右：扫码） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddLink"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="@string/btn_add_link"
+                android:textSize="14sp"
+                app:cornerRadius="14dp"
+                app:icon="@drawable/ic_link"
+                app:iconGravity="textStart"
+                app:iconSize="18dp" />
+
+            <Space
+                android:layout_width="10dp"
+                android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnScan"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="@string/btn_scan"
+                android:textSize="14sp"
+                app:cornerRadius="14dp"
+                app:icon="@drawable/ic_qr_scan"
+                app:iconGravity="textStart"
+                app:iconSize="18dp" />
+        </LinearLayout>
+
+        <!-- 版本更新：按钮 + 下载进度 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnUpdate"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="6dp"
+            android:text="@string/update_check"
+            android:textColor="@color/accent"
+            android:textSize="14sp"
+            app:icon="@drawable/ic_update"
+            app:iconGravity="textStart"
+            app:iconSize="18dp"
+            app:iconTint="@color/accent" />
+
+        <ProgressBar
+            android:id="@+id/updateProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="-6dp"
+            android:max="100"
+            android:progressTint="@color/accent"
+            android:visibility="gone" />
+
+        <!-- 当前版本：右下角 -->
+        <TextView
+            android:id="@+id/tvVersion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="10dp"
+            android:gravity="end"
+            android:textColor="@color/on_bg_faint"
+            android:textSize="11sp" />
+    </LinearLayout>
 
 </FrameLayout>

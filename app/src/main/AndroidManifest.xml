@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 应用内自更新：下载新版 APK 后拉起系统安装器 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
@@ -40,15 +43,30 @@
             android:theme="@style/Theme.DshBridge.Web"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- 扫码界面：覆盖 ZXing 库默认的 sensorLandscape，改为跟随手机方向 -->
+        <!-- 扫码页：fullSensor 让取景界面跟随手机方向（库自带的 CaptureActivity 锁横屏，体验别扭） -->
         <activity
-            android:name=".ScannerActivity"
-            android:clearTaskOnLaunch="true"
+            android:name=".ScanActivity"
             android:exported="false"
             android:screenOrientation="fullSensor"
-            android:stateNotNeeded="true"
-            android:theme="@style/zxing_CaptureTheme"
-            android:windowSoftInputMode="stateAlwaysHidden" />
+            android:theme="@style/Theme.DshBridge.Scanner" />
+
+        <!-- 供系统安装器读取下载好的 APK：Android 7+ 不允许以 file:// 形式外传文件 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- 移除 ZXing 库自带的 CaptureActivity：它是固定横屏、界面不可定制的旧扫码页，
+             本项目改用自定义 ScanActivity（DecoratedBarcodeView + 相册入口）。
+             不移除的话它会一直留在合并清单里，容易被误用。 -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            tools:node="remove" />
     </application>
 
 </manifest>
