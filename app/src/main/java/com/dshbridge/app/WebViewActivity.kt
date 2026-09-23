@@ -5,7 +5,9 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -17,11 +19,13 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.dshbridge.app.data.CredentialVault
 import com.dshbridge.app.data.LinkRecord
@@ -67,6 +71,13 @@ class WebViewActivity : AppCompatActivity() {
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
+    /** 原生量到的状态栏 / 导航栏高度，注入网页用于兜底其安全区（见 injectPageChrome） */
+    private var safeTopPx = 0
+    private var safeBottomPx = 0
+
+    /** 页面是否已加载完成：insets 回调可能早于首次加载，避免对着空文档注入 */
+    private var pageReady = false
+
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val callback = fileChooserCallback ?: return@registerForActivityResult
@@ -82,7 +93,7 @@ class WebViewActivity : AppCompatActivity() {
 
         binding = ActivityWebviewBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        Insets.applySystemBarsPadding(binding.root)
+        setupFullscreen()
 
         store = LinkStore(this)
         vault = CredentialVault(this)
@@ -105,6 +116,40 @@ class WebViewActivity : AppCompatActivity() {
         }
 
         startSession(link)
+    }
+
+    /**
+     * 会话页做成真正的 edge-to-edge：网页一直画到状态栏/导航栏下面，系统栏透明覆盖其上，
+     * 于是"背景延伸满屏、最上方仍有系统状态条"。
+     *
+     * 两处必要的补偿：
+     *  1. 软键盘高度作为底部 padding（否则聊天输入框被键盘压住）；
+     *  2. 把原生系统栏高度注入网页（`--dsh-mobile-safe-top/bottom`），因为不同设备/WebView
+     *     对 `env(safe-area-inset-*)` 的支持不一致，注入真实值才能保证 dsh-bridge 那 52px
+     *     顶栏不会钻到状态栏底下。
+     */
+    @Suppress("DEPRECATION")
+    private fun setupFullscreen() {
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // 不要系统给透明栏加的半透明遮罩，否则又会出现一条灰边
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        Insets.applyEdgeToEdge(binding.root) { top, bottom ->
+            safeTopPx = top
+            safeBottomPx = bottom
+            // 顶部进度条要避开状态栏，否则 3dp 细条会被压在状态栏下面看不见
+            (binding.progress.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+                if (lp.topMargin != top) {
+                    lp.topMargin = top
+                    binding.progress.layoutParams = lp
+                }
+            }
+            if (pageReady) injectPageChrome(binding.webView)
+        }
     }
 
     // ---- 会话启动 ----
@@ -212,6 +257,8 @@ class WebViewActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 binding.progress.visibility = View.GONE
+                pageReady = true
+                injectPageChrome(view)
                 runLoginProbe(view)
             }
 
@@ -262,6 +309,73 @@ class WebViewActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    // ---- 全屏（edge-to-edge）配套：安全区变量注入 + 状态栏图标配色 ----
+
+    /**
+     * 每次页面加载完成后注入两件事：
+     *
+     * 1. **安全区兜底**：把原生量到的状态栏/导航栏高度写进
+     *    `--dsh-mobile-safe-top` / `--dsh-mobile-safe-bottom`。
+     *    dsh-bridge 的移动端样式对这两个变量的默认值是 `env(safe-area-inset-*)`，
+     *    但各设备/WebView 对 `env()` 的支持并不一致；注入真实值可保证它那 52px 顶栏
+     *    与底部输入区不会钻到系统栏底下。顺带补上 `viewport-fit=cover`，
+     *    让页面自己的 `env()` 也能拿到非零值。
+     *
+     * 2. **状态栏图标配色**：内容铺到状态栏下面后，图标颜色必须与网页底色形成对比，
+     *    否则深色主题下会出现"浅色图标压在浅色网页上"看不见的情况。
+     *    DSH 会把当前主题写到 `documentElement.style.colorScheme`（light/dark，
+     *    见 dsh-client-ui-layout 的 apply()），直接读它最准；读不到时退回按底色亮度推断。
+     */
+    private fun injectPageChrome(view: WebView) {
+        val script = """
+            (function(){
+              try{
+                var d = document.documentElement;
+                d.style.setProperty('--dsh-mobile-safe-top', '${safeTopPx}px');
+                d.style.setProperty('--dsh-mobile-safe-bottom', '${safeBottomPx}px');
+
+                var meta = document.querySelector('meta[name=viewport]');
+                if (meta && String(meta.content).indexOf('viewport-fit') < 0) {
+                  meta.content = meta.content + ',viewport-fit=cover';
+                }
+
+                // 优先用 DSH 自己写的主题标记
+                var cs = (getComputedStyle(d).colorScheme || d.style.colorScheme || '').toLowerCase();
+                if (cs.indexOf('dark') >= 0) return 'dark';
+                if (cs.indexOf('light') >= 0) return 'light';
+
+                // 兜底：按背景色亮度推断
+                function rgb(c){
+                  c = String(c || '').trim();
+                  var m6 = /^#([0-9a-f]{6})${'$'}/i.exec(c);
+                  if (m6) { var n = parseInt(m6[1],16); return [(n>>16)&255,(n>>8)&255,n&255,1]; }
+                  var m3 = /^#([0-9a-f]{3})${'$'}/i.exec(c);
+                  if (m3) { var h=m3[1]; return [parseInt(h[0]+h[0],16),parseInt(h[1]+h[1],16),parseInt(h[2]+h[2],16),1]; }
+                  var g = /rgba?\(([^)]+)\)/.exec(c);
+                  if (g) { var p = g[1].split(','); return [parseFloat(p[0])||0, parseFloat(p[1])||0, parseFloat(p[2])||0, p[3]===undefined?1:parseFloat(p[3])]; }
+                  return null;
+                }
+                function lum(c){ var r = rgb(c); if (!r || r[3] === 0) return null; return (0.299*r[0] + 0.587*r[1] + 0.114*r[2]) / 255; }
+
+                var l = lum(getComputedStyle(document.body).backgroundColor);
+                if (l === null) l = lum(getComputedStyle(d).backgroundColor);
+                if (l === null) l = lum(getComputedStyle(d).getPropertyValue('--dsw-alias-bg-base'));
+                return (l === null) ? 'light' : (l < 0.5 ? 'dark' : 'light');
+              }catch(e){ return 'light'; }
+            })();
+        """.trimIndent()
+
+        view.evaluateJavascript(script) { raw ->
+            // 网页是深色 -> 状态栏图标要用浅色，即 isAppearanceLightStatusBars = false
+            val pageIsDark = raw?.trim('"') == "dark"
+            val useDarkIcons = !pageIsDark
+            WindowInsetsControllerCompat(window, binding.root).apply {
+                isAppearanceLightStatusBars = useDarkIcons
+                isAppearanceLightNavigationBars = useDarkIcons
+            }
+        }
     }
 
     // ---- 登录兜底 ----
