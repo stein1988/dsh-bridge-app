@@ -37,6 +37,7 @@ import com.dshbridge.app.ui.Insets
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
  * 会话页：全屏 WebView 展示 dsh-bridge 网页。
@@ -71,9 +72,9 @@ class WebViewActivity : AppCompatActivity() {
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
-    /** 原生量到的状态栏 / 导航栏高度，注入网页用于兜底其安全区（见 injectPageChrome） */
-    private var safeTopPx = 0
-    private var safeBottomPx = 0
+    /** 原生量到的状态栏 / 导航栏高度。WindowInsets 的单位是**物理像素**，注入网页前必须换算 */
+    private var safeTopDevicePx = 0
+    private var safeBottomDevicePx = 0
 
     /** 页面是否已加载完成：insets 回调可能早于首次加载，避免对着空文档注入 */
     private var pageReady = false
@@ -139,8 +140,8 @@ class WebViewActivity : AppCompatActivity() {
         }
 
         Insets.applyEdgeToEdge(binding.root) { top, bottom ->
-            safeTopPx = top
-            safeBottomPx = bottom
+            safeTopDevicePx = top
+            safeBottomDevicePx = bottom
             // 顶部进度条要避开状态栏，否则 3dp 细条会被压在状态栏下面看不见
             (binding.progress.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
                 if (lp.topMargin != top) {
@@ -151,6 +152,14 @@ class WebViewActivity : AppCompatActivity() {
             if (pageReady) injectPageChrome(binding.webView)
         }
     }
+
+    /**
+     * WindowInsets 给的是**物理像素**，而 CSS 里的 `px` 是**逻辑像素**（即 dp）：
+     * WebView 会按屏幕密度缩放。直接把物理像素当 CSS px 注入，等于把值放大 `density` 倍
+     * （本机 2.75 倍）—— 曾导致会话顶栏被整体推下去一大截。
+     */
+    private fun toCssPx(devicePx: Int): Int =
+        (devicePx / resources.displayMetrics.density).roundToInt()
 
     // ---- 会话启动 ----
 
@@ -329,12 +338,16 @@ class WebViewActivity : AppCompatActivity() {
      *    见 dsh-client-ui-layout 的 apply()），直接读它最准；读不到时退回按底色亮度推断。
      */
     private fun injectPageChrome(view: WebView) {
+        // 注意换算：注入的是 CSS px（= dp），不是 WindowInsets 的物理像素
+        val topCss = toCssPx(safeTopDevicePx)
+        val bottomCss = toCssPx(safeBottomDevicePx)
+
         val script = """
             (function(){
               try{
                 var d = document.documentElement;
-                d.style.setProperty('--dsh-mobile-safe-top', '${safeTopPx}px');
-                d.style.setProperty('--dsh-mobile-safe-bottom', '${safeBottomPx}px');
+                d.style.setProperty('--dsh-mobile-safe-top', '${topCss}px');
+                d.style.setProperty('--dsh-mobile-safe-bottom', '${bottomCss}px');
 
                 var meta = document.querySelector('meta[name=viewport]');
                 if (meta && String(meta.content).indexOf('viewport-fit') < 0) {
