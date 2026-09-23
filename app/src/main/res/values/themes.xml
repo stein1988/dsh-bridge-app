@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.DshBridge" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_primary</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="android:windowBackground">@color/app_bg</item>
+    </style>
+
+    <!-- 会话页：无应用内标题栏，网页铺满可用区域。
+         刻意不启用 edge-to-edge：dsh-bridge 的移动端样式用 env(safe-area-inset-top)
+         预留顶栏安全区，而在非 edge-to-edge 的 WebView 里该值为 0、网页从状态栏下方开始，
+         正好不会与网页自己的 52px 顶栏重叠。若要改成真·沉浸式，见 WebViewActivity 的
+         EDGE_TO_EDGE 常量（需同时给网页补 viewport-fit=cover）。 -->
+    <style name="Theme.DshBridge.Web" parent="Theme.DshBridge">
+        <item name="android:windowBackground">@color/webview_bg</item>
+    </style>
+
+</resources>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DSH Bridge</string>
+
+    <!-- 首页 -->
+    <string name="home_title">DSH Bridge</string>
+    <string name="fab_add">添加链接</string>
+    <string name="empty_title">还没有链接</string>
+    <string name="empty_desc">点右下角按钮，扫描 dsh-bridge 二维码或手动输入地址</string>
+    <string name="menu_scan">扫描二维码添加</string>
+    <string name="menu_manual">手动输入地址</string>
+
+    <!-- 手动添加 -->
+    <string name="manual_title">手动添加链接</string>
+    <string name="hint_url">网页地址</string>
+    <string name="hint_name">名称（可选）</string>
+    <string name="manual_help">例如 http://192.168.1.10:3082/ 或你的隧道域名</string>
+    <string name="invalid_url">地址无效，请输入以 http:// 或 https:// 开头的地址</string>
+
+    <!-- 单项操作 -->
+    <string name="menu_remember_password">记住密码</string>
+    <string name="menu_update_password">修改密码</string>
+    <string name="menu_clear_password">清除密码</string>
+    <string name="menu_copy">复制链接</string>
+    <string name="menu_delete">删除</string>
+    <string name="badge_password_saved">已记住密码</string>
+    <string name="link_copied">链接已复制</string>
+    <string name="link_deleted">已删除</string>
+
+    <!-- 密码对话框 -->
+    <string name="password_title_remember">记住访问密码</string>
+    <string name="password_title_update">修改访问密码</string>
+    <string name="password_hint">dsh-bridge 访问密码</string>
+    <string name="password_desc">密码将加密保存在本机（Android Keystore），仅用于自动登录该地址。</string>
+    <string name="password_saved_ok">密码已验证并保存</string>
+    <string name="password_saved_unverified">已保存（未能联网验证，下次打开会重试）</string>
+    <string name="password_wrong">密码错误，未保存</string>
+    <string name="password_empty">请输入密码</string>
+    <string name="password_cleared">已清除保存的密码</string>
+    <string name="clear_password_confirm">清除该链接保存的访问密码？下次打开需要手动输入。</string>
+    <string name="delete_confirm">删除该链接记录？保存的密码也会一并清除。</string>
+
+    <!-- 会话页 -->
+    <string name="scan_prompt">将 dsh-bridge 二维码放入框内</string>
+    <string name="web_error_title">网页加载失败</string>
+    <string name="action_retry">重试</string>
+    <string name="action_ok">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="autologin_failed">自动登录失败：%1$s</string>
+    <string name="autologin_no_password">该链接未保存密码，如页面要求登录请手动输入，或返回首页用「记住密码」保存。</string>
+
+    <string name="vault_plain_warning">本机安全存储（Keystore）不可用，保存的密码将不做加密处理，请注意风险。</string>
+
+    <string name="cd_more">更多操作</string>
+    <string name="cd_link_icon">链接图标</string>
+    <string name="cd_empty_icon">空状态图标</string>
+</resources>

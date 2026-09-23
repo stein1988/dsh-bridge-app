@@ -1,0 +1,18 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# ---- 签名材料：绝不入库 ----
+# 丢失密钥库将无法用同一签名更新已安装的 App，请离线备份 keystore/ 与 keystore.properties
+keystore.properties
+keystore/
+*.jks
+*.keystore

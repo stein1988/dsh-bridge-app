@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 凭据文件含加密后的访问密码，且密钥绑定本机 Keystore，跨设备恢复必然失败：
+     直接从备份与迁移中排除，避免产生无法解密的垃圾条目。 -->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="credentials.xml" />
+</full-backup-content>

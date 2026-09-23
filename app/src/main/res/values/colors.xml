@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_primary">#4D6BFE</color>
+    <color name="brand_primary_dark">#3A55D9</color>
+    <color name="brand_container">#E4E9FF</color>
+    <color name="app_bg">#F6F7FB</color>
+    <color name="webview_bg">#FFFFFF</color>
+    <color name="text_primary">#1A1D24</color>
+    <color name="text_secondary">#6B7280</color>
+    <color name="error">#D32F2F</color>
+    <color name="badge_bg">#E8F5E9</color>
+    <color name="badge_text">#2E7D32</color>
+    <color name="ic_launcher_background">#4D6BFE</color>
+</resources>
