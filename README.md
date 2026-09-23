@@ -174,11 +174,15 @@ POST /__dsh_bridge__/login     body: {"password":"..."}
 ## 已知取舍
 
 - **会话页是真正的 edge-to-edge**：网页一直画到状态栏/导航栏下面，系统栏透明覆盖其上 ——
-  也就是"背景铺满全屏、最上方仍有系统状态条"。为不遮挡内容做了两处补偿：
-  ① 软键盘高度作为底部 padding（否则输入框被键盘压住）；
-  ② 把**原生量到的**状态栏/导航栏高度注入网页的 `--dsh-mobile-safe-top/bottom` ——
-  因为各设备 WebView 对 `env(safe-area-inset-*)` 的支持不一致，dsh-bridge 移动端样式预留的
-  52px 顶栏需要这个兜底才不会钻到状态栏底下；同时补 `viewport-fit=cover`。
+  也就是"背景铺满全屏、最上方仍有系统状态条"。系统栏区域由网页自己避让：把**原生量到的**
+  状态栏/导航栏高度注入网页的 `--dsh-mobile-safe-top/bottom`（各设备 WebView 对
+  `env(safe-area-inset-*)` 的支持不一致，dsh-bridge 移动端样式预留的 52px 顶栏需要这个兜底
+  才不会钻到状态栏底下），同时补 `viewport-fit=cover`。
+
+  **不消费软键盘（IME）inset**：键盘弹起时 WebView 自己会收缩可视视口，而网页侧已有两套
+  把输入框带进可见区的逻辑（DSH 核心基于 `visualViewport` 的滚动入视口、桥接端的
+  visualViewport 键盘适配）。若再把 IME 高度当作原生底部 padding，等于**收缩两次**，
+  输入框会被顶得过高、与键盘之间留出一块空白。
 
   状态栏/导航栏图标颜色跟随**网页主题**：优先读 DSH 写在
   `documentElement.style.colorScheme` 的 `light`/`dark`，读不到则按页面底色亮度推断 ——

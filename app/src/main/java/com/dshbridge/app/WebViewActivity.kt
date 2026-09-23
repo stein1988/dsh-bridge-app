@@ -123,11 +123,12 @@ class WebViewActivity : AppCompatActivity() {
      * 会话页做成真正的 edge-to-edge：网页一直画到状态栏/导航栏下面，系统栏透明覆盖其上，
      * 于是"背景延伸满屏、最上方仍有系统状态条"。
      *
-     * 两处必要的补偿：
-     *  1. 软键盘高度作为底部 padding（否则聊天输入框被键盘压住）；
-     *  2. 把原生系统栏高度注入网页（`--dsh-mobile-safe-top/bottom`），因为不同设备/WebView
-     *     对 `env(safe-area-inset-*)` 的支持不一致，注入真实值才能保证 dsh-bridge 那 52px
-     *     顶栏不会钻到状态栏底下。
+     * 系统栏区域由网页自己避让：把原生系统栏高度注入网页（`--dsh-mobile-safe-top/bottom`），
+     * 因为不同设备/WebView 对 `env(safe-area-inset-*)` 的支持不一致，注入真实值才能保证
+     * dsh-bridge 那 52px 顶栏不会钻到状态栏底下。
+     *
+     * **不处理软键盘**：WebView 自己会随键盘收缩可视视口，网页侧也有 visualViewport 逻辑
+     * 把输入框带进可见区；再叠加原生 IME padding 会把输入框顶得过高（见 ui/Insets.kt）。
      */
     @Suppress("DEPRECATION")
     private fun setupFullscreen() {

@@ -36,23 +36,26 @@ object Insets {
      * 会话页：内容**铺满整屏**（真正的 edge-to-edge），系统栏透明地覆盖在网页之上 ——
      * 也就是用户期望的"背景延伸到全屏，最上方仍有系统状态条"。
      *
-     * 与 [applySystemBarsPadding] 的区别：这里**不给顶部/侧边留 padding**，网页会一直画到
-     * 状态栏与导航栏下面；只把**软键盘**的高度作为底部 padding 让出来，否则聊天输入框会被
-     * 键盘遮住。
+     * 与 [applySystemBarsPadding] 的区别：这里**完全不加 padding**，网页一直画到状态栏与
+     * 导航栏下面；系统栏区域由网页自己用 `--dsh-mobile-safe-top/bottom` 避让。
      *
-     * 代价是网页需要自己躲开状态栏/刘海。dsh-bridge 的移动端样式已经用
-     * `--dsh-mobile-safe-top/bottom`（默认取 `env(safe-area-inset-*)`）做了预留，
-     * 但不同设备/WebView 对 `env()` 的支持并不一致，所以这里把**原生量到的真实高度**
-     * 通过 [onSystemBarInsets] 回传，由调用方注入网页作为兜底（见 WebViewActivity）。
+     * **刻意不消费软键盘（IME）inset**：键盘弹起时 WebView（Chromium）自己会收缩可视视口，
+     * 而网页侧有两套把输入框带进可见区的逻辑 ——
+     *   - DSH 核心 `dsh-client-ui-conversation` 基于 `visualViewport.offsetTop/height` 的滚动入视口；
+     *   - 桥接端 `client/index.js` 的 visualViewport 键盘适配（针对 sticky 输入框跳动）。
+     * 若再把 IME 高度作为原生底部 padding，等于**收缩两次**，输入框会被顶得过高、
+     * 与键盘之间留出一块空白（实机反馈确认）。
+     *
+     * 网页仍需要躲开状态栏/刘海/导航栏：dsh-bridge 的移动端样式已用
+     * `--dsh-mobile-safe-top/bottom`（默认取 `env(safe-area-inset-*)`）预留，但各设备
+     * WebView 对 `env()` 的支持不一致，所以这里把**原生量到的真实高度**通过
+     * [onSystemBarInsets] 回传，由调用方注入网页作为兜底（见 WebViewActivity）。
      */
     fun applyEdgeToEdge(root: View, onSystemBarInsets: (topPx: Int, bottomPx: Int) -> Unit) {
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            // 只避让软键盘；系统栏区域交给网页自己绘制（这样背景才能铺满全屏）
-            view.setPadding(0, 0, 0, ime.bottom)
             onSystemBarInsets(bars.top, bars.bottom)
             insets
         }
