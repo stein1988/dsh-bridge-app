@@ -43,11 +43,13 @@
             android:theme="@style/Theme.DshBridge.Web"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- 扫码页：fullSensor 让取景界面跟随手机方向（库自带的 CaptureActivity 锁横屏，体验别扭） -->
+        <!-- 扫码页：锁定竖屏。
+             之前用 fullSensor（跟随手机方向），但实机上手机会被判定成横屏，扫码界面整个躺倒。
+             这里直接锁 portrait，与用户预期一致。 -->
         <activity
             android:name=".ScanActivity"
             android:exported="false"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.DshBridge.Scanner" />
 
         <!-- 供系统安装器读取下载好的 APK：Android 7+ 不允许以 file:// 形式外传文件 -->
