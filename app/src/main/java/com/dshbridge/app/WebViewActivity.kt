@@ -127,8 +127,9 @@ class WebViewActivity : AppCompatActivity() {
      * 因为不同设备/WebView 对 `env(safe-area-inset-*)` 的支持不一致，注入真实值才能保证
      * dsh-bridge 那 52px 顶栏不会钻到状态栏底下。
      *
-     * **不处理软键盘**：WebView 自己会随键盘收缩可视视口，网页侧也有 visualViewport 逻辑
-     * 把输入框带进可见区；再叠加原生 IME padding 会把输入框顶得过高（见 ui/Insets.kt）。
+     * **软键盘（IME）必须由原生让位**：顶部系统栏可以不占 padding（网页自己画到状态栏下），
+     * 但键盘不行 —— 宿主输入区是 `position: sticky; bottom: 0`，位置取决于滚动容器底边，
+     * 只有缩短 WebView 才能让它上移。详见 ui/Insets.kt 里 applyEdgeToEdge 的说明。
      */
     @Suppress("DEPRECATION")
     private fun setupFullscreen() {

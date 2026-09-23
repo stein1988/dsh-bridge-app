@@ -36,26 +36,41 @@ object Insets {
      * 会话页：内容**铺满整屏**（真正的 edge-to-edge），系统栏透明地覆盖在网页之上 ——
      * 也就是用户期望的"背景延伸到全屏，最上方仍有系统状态条"。
      *
-     * 与 [applySystemBarsPadding] 的区别：这里**完全不加 padding**，网页一直画到状态栏与
-     * 导航栏下面；系统栏区域由网页自己用 `--dsh-mobile-safe-top/bottom` 避让。
+     * 与 [applySystemBarsPadding] 的区别：**顶部/侧边不加 padding**，网页一直画到状态栏与
+     * 导航栏下面（这是 v1.0.1 修掉"上下白条"的做法）；但仍**消费 IME inset**，否则键盘会
+     * 盖住输入框 —— 顶部系统栏与软键盘必须区别对待，不能一起省掉。
      *
-     * **刻意不消费软键盘（IME）inset**：键盘弹起时 WebView（Chromium）自己会收缩可视视口，
-     * 而网页侧有两套把输入框带进可见区的逻辑 ——
-     *   - DSH 核心 `dsh-client-ui-conversation` 基于 `visualViewport.offsetTop/height` 的滚动入视口；
-     *   - 桥接端 `client/index.js` 的 visualViewport 键盘适配（针对 sticky 输入框跳动）。
-     * 若再把 IME 高度作为原生底部 padding，等于**收缩两次**，输入框会被顶得过高、
-     * 与键盘之间留出一块空白（实机反馈确认）。
-     *
-     * 网页仍需要躲开状态栏/刘海/导航栏：dsh-bridge 的移动端样式已用
-     * `--dsh-mobile-safe-top/bottom`（默认取 `env(safe-area-inset-*)`）预留，但各设备
-     * WebView 对 `env()` 的支持不一致，所以这里把**原生量到的真实高度**通过
+     * 系统栏区域由网页自己用 `--dsh-mobile-safe-top/bottom` 避让：各设备 WebView 对
+     * `env(safe-area-inset-*)` 的支持不一致，所以这里把**原生量到的真实高度**通过
      * [onSystemBarInsets] 回传，由调用方注入网页作为兜底（见 WebViewActivity）。
      */
     fun applyEdgeToEdge(root: View, onSystemBarInsets: (topPx: Int, bottomPx: Int) -> Unit) {
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
+
+            // 软键盘弹起时，把 IME 高度从布局里让出来 —— 即 v1.0.0 / v1.0.1 的行为。
+            //
+            // 这一步**必须由原生做**，2026-09 实机确认（此前误判为"网页自己会处理"而删掉，
+            // 结果键盘一弹输入框就被挡住）：
+            //   1. 宿主输入区 `.wSkVaW_composerSeat` 是 `position: sticky; bottom: 0`
+            //      （见 dsh-client-ui-conversation 的 CSS），位置由"滚动容器底边"决定，
+            //      **不随滚动偏移变化** —— 所以滚动无法把它抬到键盘之上；
+            //   2. 该容器高度来自 100% 链，最终取决于 WebView 高度（布局视口）；
+            //   3. 本页是 edge-to-edge（`setDecorFitsSystemWindows(false)`），
+            //      窗口不会为 IME 让出空间，IME 只能作为 inset 交给应用消费。
+            // 于是只有原生缩短 WebView，输入框才会随之上移。
+            //
+            // 网页侧那两处 visualViewport 逻辑**都不能替代**它：
+            //   - 桥接端 `client/index.js` 的键盘适配带 UA 守卫
+            //     `if (!/iPhone|iPad|iPod/.test(navigator.userAgent)) return;` —— 只在 iOS 生效，
+            //     Android 上第一行就返回；
+            //   - DSH 核心那段是 scrollIntoView 辅助，只能把**流内元素**滚进可视区，
+            //     无法重新定位 sticky/absolute bottom 的底部固定元素。
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(0, 0, 0, ime.bottom)
+
             onSystemBarInsets(bars.top, bars.bottom)
             insets
         }

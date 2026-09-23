@@ -201,10 +201,15 @@ POST /__dsh_bridge__/login     body: {"password":"..."}
   `env(safe-area-inset-*)` 的支持不一致，dsh-bridge 移动端样式预留的 52px 顶栏需要这个兜底
   才不会钻到状态栏底下），同时补 `viewport-fit=cover`。
 
-  **不消费软键盘（IME）inset**：键盘弹起时 WebView 自己会收缩可视视口，而网页侧已有两套
-  把输入框带进可见区的逻辑（DSH 核心基于 `visualViewport` 的滚动入视口、桥接端的
-  visualViewport 键盘适配）。若再把 IME 高度当作原生底部 padding，等于**收缩两次**，
-  输入框会被顶得过高、与键盘之间留出一块空白。
+  **但软键盘（IME）必须由原生让位**：顶部系统栏可以不占 padding（网页自己画到状态栏下），
+  键盘不行 —— 宿主输入区 `.wSkVaW_composerSeat` 是 `position: sticky; bottom: 0`，
+  位置取决于其滚动容器的底边，而该容器高度来自 100% 链、最终取决于 WebView 高度；
+  edge-to-edge 下窗口又不会为 IME 让出空间。所以只有原生按 IME 高度缩短 WebView，
+  输入框才会随键盘上移。
+
+  网页侧的两处 `visualViewport` 逻辑**都不能替代**它：桥接端 `client/index.js` 的键盘适配
+  带 UA 守卫（`if (!/iPhone|iPad|iPod/.test(...)) return;`，只在 iOS 生效）；DSH 核心那段是
+  `scrollIntoView` 辅助，只能把流内元素滚进可视区，无法移动 sticky/absolute bottom 的底部固定元素。
 
   状态栏/导航栏图标颜色跟随**网页主题**：优先读 DSH 写在
   `documentElement.style.colorScheme` 的 `light`/`dark`，读不到则按页面底色亮度推断 ——
