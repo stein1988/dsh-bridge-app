@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 更新失败详情：自定义布局而不是 AlertDialog 的三个按钮槽位。
-     三个中文按钮（复制/浏览器/确定）放在默认按钮行里会被挤到换行，排版很难看，
-     这里改为竖排整宽按钮 + 固定高度的可滚动详情区。 -->
+<!-- 更新失败详情弹窗。
+     排版要点：
+      - 两个「调试用」动作并排一行，主操作「确定」整宽独占一行 —— 主次分明且省一行高度；
+      - 详情区固定高度可滚动（等宽字体，便于阅读与复制），不再让弹窗顶满整屏；
+      - 整体留白收紧，避免在小屏上把标题挤到贴边。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -10,7 +12,7 @@
     android:paddingStart="22dp"
     android:paddingTop="20dp"
     android:paddingEnd="22dp"
-    android:paddingBottom="14dp">
+    android:paddingBottom="16dp">
 
     <TextView
         android:layout_width="match_parent"
@@ -24,7 +26,7 @@
         android:id="@+id/tvContext"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="3dp"
         android:textColor="@color/on_bg_faint"
         android:textSize="12sp" />
 
@@ -38,10 +40,13 @@
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="240dp"
-        android:layout_marginTop="8dp"
+        android:layout_height="176dp"
+        android:layout_marginTop="7dp"
         android:background="@color/surface"
-        android:padding="10dp"
+        android:paddingStart="10dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="8dp"
         android:scrollbars="vertical">
 
         <TextView
@@ -49,7 +54,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:lineSpacingExtra="3dp"
+            android:lineSpacingExtra="2dp"
             android:textColor="@color/on_bg_muted"
             android:textIsSelectable="true"
             android:textSize="11sp" />
@@ -58,38 +63,56 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:lineSpacingExtra="3dp"
+        android:layout_marginTop="10dp"
+        android:lineSpacingExtra="2dp"
         android:text="@string/update_failed_tip"
         android:textColor="@color/on_bg_faint"
         android:textSize="11sp" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnCopyDetail"
-        style="@style/Widget.Material3.Button.OutlinedButton"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="46dp"
+        android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="@string/update_copy_detail"
-        android:textSize="14sp"
-        app:cornerRadius="12dp" />
+        android:baselineAligned="false"
+        android:orientation="horizontal">
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnBrowserTest"
-        style="@style/Widget.Material3.Button.OutlinedButton"
-        android:layout_width="match_parent"
-        android:layout_height="46dp"
-        android:layout_marginTop="8dp"
-        android:text="@string/update_open_test_url"
-        android:textSize="14sp"
-        app:cornerRadius="12dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCopyDetail"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:text="@string/update_copy_detail"
+            android:textSize="13sp"
+            app:cornerRadius="12dp" />
+
+        <Space
+            android:layout_width="10dp"
+            android:layout_height="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBrowserTest"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1"
+            android:minWidth="0dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:text="@string/update_open_test_url"
+            android:textSize="13sp"
+            app:cornerRadius="12dp" />
+    </LinearLayout>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnDismiss"
         style="@style/Widget.Material3.Button"
         android:layout_width="match_parent"
         android:layout_height="46dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="10dp"
         android:text="@string/action_ok"
         android:textSize="14sp"
         app:cornerRadius="12dp" />
