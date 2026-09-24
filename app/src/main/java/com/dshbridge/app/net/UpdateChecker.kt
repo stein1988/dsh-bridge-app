@@ -224,6 +224,13 @@ object UpdateChecker {
     private fun normalizeVersion(tag: String): String =
         tag.trim().removePrefix("v").removePrefix("V")
 
+    /**
+     * 供调试用的"测试地址"：直连 GitHub API 的版本查询 URL。
+     * 在系统浏览器里打开它，若浏览器能拿到 JSON 而 App 拿不到，说明流量没走代理
+     * （应用分流未包含本应用），而不是网络本身不通。
+     */
+    fun diagnosticUrl(): String = "$API/repos/$REPO/releases/latest"
+
     // ---- 下载 ----
 
     /**

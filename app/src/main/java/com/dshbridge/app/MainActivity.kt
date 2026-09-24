@@ -3,6 +3,8 @@ package com.dshbridge.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -415,11 +417,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 更新失败的详情弹窗。
+     *
+     * 除了展示逐条通路的结果，还提供两个调试手段：
+     *  - **复制详情**：内容较长且含具体错误，方便原样贴出来排查；
+     *  - **浏览器打开测试地址**：用同一个 URL 在系统浏览器里打开。
+     *    若浏览器能拿到 JSON 而 App 失败，说明是"应用分流/分应用代理"没把本应用纳入代理，
+     *    而非网络本身不通 —— 这是最快区分"App 问题"与"网络问题"的办法。
+     */
     private fun showUpdateFailureDialog(detail: String) {
+        val full = getString(R.string.update_failed_context, BuildConfig.VERSION_NAME) +
+            "\n\n" + getString(R.string.update_failed_detail, detail)
+
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.update_failed_title)
-            .setMessage(getString(R.string.update_failed_detail, detail))
+            .setMessage(full)
             .setPositiveButton(R.string.action_ok, null)
+            .setNeutralButton(R.string.update_copy_detail) { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(
+                    ClipData.newPlainText("dsh-bridge update error", full)
+                )
+                toast(getString(R.string.update_detail_copied))
+            }
+            .setNegativeButton(R.string.update_open_test_url) { _, _ ->
+                val url = UpdateChecker.diagnosticUrl()
+                val opened = runCatching {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                }.isSuccess
+                if (!opened) toast(getString(R.string.update_open_failed))
+            }
             .show()
     }
 
