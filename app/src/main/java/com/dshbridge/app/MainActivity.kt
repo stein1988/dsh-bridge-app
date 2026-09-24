@@ -408,10 +408,19 @@ class MainActivity : AppCompatActivity() {
             }.onFailure { error ->
                 binding.btnUpdate.setText(R.string.update_check)
                 if (userInitiated) {
-                    toast(getString(R.string.update_failed, error.message ?: error.javaClass.simpleName))
+                    // 失败原因现在是逐条通路列出的多行文本，Toast 显示不下，用弹窗
+                    showUpdateFailureDialog(error.message ?: error.javaClass.simpleName)
                 }
             }
         }
+    }
+
+    private fun showUpdateFailureDialog(detail: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.update_failed_title)
+            .setMessage(getString(R.string.update_failed_detail, detail))
+            .setPositiveButton(R.string.action_ok, null)
+            .show()
     }
 
     private fun downloadAndInstall(release: UpdateChecker.Release) {

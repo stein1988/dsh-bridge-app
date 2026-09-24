@@ -224,11 +224,26 @@ POST /__dsh_bridge__/login     body: {"password":"..."}
   的横向手势。嫌不好触发可以调 `ui/EdgeBackLayout.kt` 的 `EDGE_WIDTH_DP` / `TRIGGER_DISTANCE_DP`。
 - **连通性探测宽松判定**：只要服务端返回任何 HTTP 响应就算"可达"。dsh-bridge 开了访问认证时
   未登录请求本来就是 401，把它当"不可达"会让状态点永远是灰的、反而误导。
-- **更新检查走两条通路**：优先 GitHub Releases API（能一次拿到版本号、更新说明、附件真实直链），
-  失败时自动降级为 `/releases/latest` 的重定向（从 `Location` 头读出 tag，**没有速率限制**，
-  再按附件命名约定拼直链）。之所以必须有兜底：未认证的 API 限额是 **60 次/小时/IP**，
-  运营商 CGNAT 共享出口很容易被打满 —— 实测就撞到过 403。
-  因此仓库的 Release 附件名**必须**保持 `dsh-bridge-app-<version>.apk` 这一约定，否则兜底通路拼不出直链。
+- **更新检查走多通路并行竞速**（谁先成功用谁，其余立即取消）：
+
+  | 通路 | 配额 | 说明 |
+  |---|---|---|
+  | `github.com/<repo>/releases/latest` 重定向 | 无 | 从 `Location` 头读 tag，最省 |
+  | `github.com/<repo>/releases.atom` | 无 | Atom 源 |
+  | `api.github.com` | 60 次/小时/IP | 信息最全（更新说明、附件真实直链与大小）|
+  | **镜像代理的 API**（`gh-proxy.com`）| — | 镜像出口 IP，**同时绕开域名封锁与限流** |
+
+  为什么必须这样：国内直连 GitHub 会踩两类失败 —— API 未认证限额 60 次/小时/**按 IP 计**，
+  运营商 CGNAT 或 VPN 共享出口极易打满（表现为 **HTTP 403**，注意 403 说明请求其实通了，
+  只是被限流）；以及 `github.com` / `api.github.com` 域名本身不通。实测中
+  `gh-proxy.com` 代理 API 可用（能拿到完整 JSON），而 `ghproxy.net` / `ghfast.top` 只能代理
+  附件下载、不能代理 API —— 所以镜像既参与版本查询，也参与下载降级。
+
+- **APK 下载逐级降级**：直连 `github.com` → 各镜像前缀。**镜像不可信也没关系**：
+  Android 安装时会校验签名，必须与已安装应用同一证书；App 还会比对发布信息里的文件大小。
+  所以镜像无法把篡改过的安装包装进设备。
+- 因此仓库的 Release 附件名**必须**保持 `dsh-bridge-app-<version>.apk` 这一约定，
+  否则按约定拼直链的通路会失效（API 通路仍可用）。
 - 未授权"安装未知应用"时，点更新会先引导去系统设置授权，避免下载完装不上白费流量。
 - 未做多窗口/分屏特殊适配；未做离线缓存（远程访问场景默认在线）。
 
