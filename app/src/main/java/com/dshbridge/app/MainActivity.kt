@@ -21,6 +21,7 @@ import com.dshbridge.app.data.LinkStore
 import com.dshbridge.app.databinding.ActivityMainBinding
 import com.dshbridge.app.databinding.DialogManualAddBinding
 import com.dshbridge.app.databinding.DialogPasswordBinding
+import com.dshbridge.app.databinding.DialogUpdateFailedBinding
 import com.dshbridge.app.net.ApkInstaller
 import com.dshbridge.app.net.BridgeAuth
 import com.dshbridge.app.net.Reachability
@@ -92,9 +93,9 @@ class MainActivity : AppCompatActivity() {
 
         if (!vault.encrypted) toast(getString(R.string.vault_plain_warning))
 
-        // 启动时静默查一次最新版本：查到就把底部按钮改成「发现新版本 vX，点此更新」，
-        // 查不到/没网都不打扰用户（失败只有手动点击时才提示）
-        checkForUpdate(userInitiated = false)
+        // 启动时静默查一次最新版本。刻意加节流：API 配额按 IP 计，每次启动都查会很快
+        // 把共享出口（CGNAT/VPN）的额度耗光，反而让手动检查也失败。
+        maybeAutoCheckForUpdate()
     }
 
     override fun onResume() {
@@ -385,6 +386,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * 启动时的静默检查，带节流（[AUTO_CHECK_INTERVAL_MS] 内最多一次）。
+     * 手动点击不受此限制。
+     */
+    private fun maybeAutoCheckForUpdate() {
+        val prefs = getSharedPreferences(PREFS_UPDATE, Context.MODE_PRIVATE)
+        val last = prefs.getLong(KEY_LAST_AUTO_CHECK, 0L)
+        if (System.currentTimeMillis() - last < AUTO_CHECK_INTERVAL_MS) return
+        prefs.edit().putLong(KEY_LAST_AUTO_CHECK, System.currentTimeMillis()).apply()
+        checkForUpdate(userInitiated = false)
+    }
+
+    /**
      * 查询最新版本。
      * @param userInitiated 自动检查（启动时）失败不打扰用户，只有手动点才提示结果
      */
@@ -418,37 +431,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 更新失败的详情弹窗。
+     * 更新失败的详情弹窗（自定义布局：竖排整宽按钮，避免默认按钮行把三个中文按钮挤到换行）。
      *
-     * 除了展示逐条通路的结果，还提供两个调试手段：
+     * 两个调试手段：
      *  - **复制详情**：内容较长且含具体错误，方便原样贴出来排查；
-     *  - **浏览器打开测试地址**：用同一个 URL 在系统浏览器里打开。
+     *  - **浏览器测试**：用同一个 URL 在系统浏览器里打开。
      *    若浏览器能拿到 JSON 而 App 失败，说明是"应用分流/分应用代理"没把本应用纳入代理，
      *    而非网络本身不通 —— 这是最快区分"App 问题"与"网络问题"的办法。
      */
     private fun showUpdateFailureDialog(detail: String) {
-        val full = getString(R.string.update_failed_context, BuildConfig.VERSION_NAME) +
-            "\n\n" + getString(R.string.update_failed_detail, detail)
+        val dialogBinding = DialogUpdateFailedBinding.inflate(layoutInflater)
+        val contextLine = getString(R.string.update_failed_context, BuildConfig.VERSION_NAME)
+        val clipboardText = "$contextLine\n\n${getString(R.string.update_failed_sources_label)}\n$detail"
 
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.update_failed_title)
-            .setMessage(full)
-            .setPositiveButton(R.string.action_ok, null)
-            .setNeutralButton(R.string.update_copy_detail) { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(
-                    ClipData.newPlainText("dsh-bridge update error", full)
-                )
-                toast(getString(R.string.update_detail_copied))
-            }
-            .setNegativeButton(R.string.update_open_test_url) { _, _ ->
-                val url = UpdateChecker.diagnosticUrl()
-                val opened = runCatching {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                }.isSuccess
-                if (!opened) toast(getString(R.string.update_open_failed))
-            }
-            .show()
+        dialogBinding.tvContext.text = contextLine
+        dialogBinding.tvDetail.text = detail
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setView(dialogBinding.root)
+            .create()
+
+        dialogBinding.btnCopyDetail.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("dsh-bridge update error", clipboardText))
+            toast(getString(R.string.update_detail_copied))
+        }
+        dialogBinding.btnBrowserTest.setOnClickListener {
+            val opened = runCatching {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.diagnosticUrl())))
+            }.isSuccess
+            if (!opened) toast(getString(R.string.update_open_failed))
+        }
+        dialogBinding.btnDismiss.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
     }
 
     private fun downloadAndInstall(release: UpdateChecker.Release) {
@@ -513,5 +529,11 @@ class MainActivity : AppCompatActivity() {
 
         /** 连通性结果缓存时长：30 秒内回到首页不重复探测 */
         const val PROBE_TTL_MS = 30_000L
+
+        /** 启动时自动检查更新的最小间隔：避免频繁消耗共享出口的 GitHub API 配额 */
+        const val AUTO_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
+
+        const val PREFS_UPDATE = "update"
+        const val KEY_LAST_AUTO_CHECK = "last_auto_check"
     }
 }

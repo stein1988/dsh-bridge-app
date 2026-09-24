@@ -87,10 +87,34 @@ object UpdateChecker {
 
     // ---- 查询最新版本 ----
 
-    suspend fun fetchLatest(): Result<Release> = coroutineScope {
-        val sources = versionSources()
-        val channel = Channel<Pair<String, Result<Release>>>(sources.size)
+    /**
+     * **两阶段**竞速：
+     *  - 阶段一只跑**不消耗 GitHub API 配额**的轻量通路；
+     *  - 阶段二（仅当阶段一全挂）才动用 API，包括镜像代理的 API。
+     *
+     * 为什么必须分阶段：未认证 API 配额是**按 IP 计**的 60 次/小时，共享出口（CGNAT/VPN）
+     * 极易打满。每次检查都无脑打 API，只会把这个共享额度耗得更快 ——
+     * 实测中就出现过"直连能通但被限流、而免费通路其实可用"的情形。
+     */
+    suspend fun fetchLatest(): Result<Release> {
+        val free = race(freeSources())
+        free.getOrNull()?.let { return Result.success(it) }
 
+        val api = race(apiSources())
+        api.getOrNull()?.let { return Result.success(it) }
+
+        val detail = listOf(free, api)
+            .mapNotNull { it.exceptionOrNull()?.message }
+            .joinToString("\n")
+        return Result.failure(IllegalStateException(detail))
+    }
+
+    /** 并发跑一组通路：谁先成功用谁，其余立即取消（不为连不上的源等满超时） */
+    private suspend fun race(sources: List<VersionSource>): Result<Release> = coroutineScope {
+        if (sources.isEmpty()) {
+            return@coroutineScope Result.failure(IllegalStateException("无可用通路"))
+        }
+        val channel = Channel<Pair<String, Result<Release>>>(sources.size)
         val jobs = sources.map { source ->
             launch(Dispatchers.IO) {
                 channel.send(source.name to runCatching { source.fetch() })
@@ -101,12 +125,7 @@ object UpdateChecker {
         try {
             repeat(sources.size) {
                 val (name, result) = channel.receive()
-                val release = result.getOrNull()
-                if (release != null) {
-                    // 谁先成功用谁，其余立刻取消 —— 国内镜像通常 1~2 秒就回来，
-                    // 不必等直连那几条把超时耗满
-                    return@coroutineScope Result.success(release)
-                }
+                result.getOrNull()?.let { return@coroutineScope Result.success(it) }
                 failures += "$name → ${result.exceptionOrNull()?.message ?: "失败"}"
             }
         } finally {
@@ -117,13 +136,21 @@ object UpdateChecker {
         Result.failure(IllegalStateException(failures.joinToString("\n")))
     }
 
-    private fun versionSources(): List<VersionSource> = buildList {
-        add(VersionSource("releases/latest 重定向") {
+    /** 不消耗 API 配额的通路（优先使用） */
+    private fun freeSources(): List<VersionSource> = listOf(
+        VersionSource("releases/latest 重定向") {
             fetchViaRedirect("$GITHUB/$REPO/releases/latest")
-        })
-        add(VersionSource("releases.atom") {
+        },
+        VersionSource("releases.atom") {
             fetchViaAtom("$GITHUB/$REPO/releases.atom")
-        })
+        },
+        VersionSource("jsDelivr 版本列表") {
+            fetchViaJsDelivr()
+        },
+    )
+
+    /** 消耗 GitHub API 配额的通路（直连与镜像出口各算一条） */
+    private fun apiSources(): List<VersionSource> = buildList {
         add(VersionSource("GitHub API") {
             fetchViaApi("$API/repos/$REPO/releases/latest")
         })
@@ -132,6 +159,36 @@ object UpdateChecker {
             add(VersionSource("$label 代 API") {
                 fetchViaApi("$prefix$API/repos/$REPO/releases/latest")
             })
+        }
+    }
+
+    /**
+     * 通路三：jsDelivr 的包数据 API。
+     *
+     * 无 GitHub 配额，且 jsDelivr 有国内 CDN 节点 —— 在"直连不通 + API 被限流"时
+     * 这是最可能成功的一条。只用来取**版本号**，附件直链仍按发布约定拼。
+     */
+    private fun fetchViaJsDelivr(): Release {
+        val request = Request.Builder()
+            .url("https://data.jsdelivr.com/v1/packages/gh/$REPO")
+            .header("Accept", "application/json")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) error("HTTP ${response.code}")
+
+            val versions = JSONObject(text).optJSONArray("versions") ?: error("无 versions 字段")
+            var latest: String? = null
+            for (i in 0 until versions.length()) {
+                val version = versions.optJSONObject(i)?.optString("version").orEmpty()
+                if (version.isBlank()) continue
+                // 不依赖接口返回顺序，按版本号取最大
+                if (latest == null || isNewer(version, latest)) latest = version
+            }
+            val version = latest ?: error("版本列表为空")
+            // jsDelivr 返回的是去掉 v 前缀的版本号，而仓库 tag 形如 v1.2.3
+            return releaseFromConvention("v$version", version, notes = "")
         }
     }
 
