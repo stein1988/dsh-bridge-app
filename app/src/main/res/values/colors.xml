@@ -31,7 +31,8 @@
     <color name="webview_bg">#FF000000</color>
     <color name="scanner_mask">#B3000000</color>
 
-    <color name="ic_launcher_background">#FF4D6BFE</color>
+    <!-- 自适应图标背景：取自 icon.png 自身的浅色底，缩放后透明圆角与它无缝衔接 -->
+    <color name="ic_launcher_background">#FFF7F8F9</color>
 
     <!-- 兼容旧引用（凭据未加密提示、徽标等） -->
     <color name="error">#FFF87171</color>
