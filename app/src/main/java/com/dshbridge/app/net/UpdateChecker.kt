@@ -81,6 +81,8 @@ object UpdateChecker {
         val apkName: String,
         /** 附件大小；未知为 -1 */
         val apkSize: Long,
+        /** 数字版本号（自建 latest.json 通路提供）；老通路未知时为 -1 */
+        val versionCode: Int = -1,
     )
 
     private class VersionSource(val name: String, val fetch: suspend () -> Release)
@@ -88,23 +90,35 @@ object UpdateChecker {
     // ---- 查询最新版本 ----
 
     /**
-     * **两阶段**竞速：
+     * **自建源优先 + 两阶段 GitHub 兜底**：
+     *  - 阶段零（仅当构建时注入了 [feedUrl]）只打自建的 latest.json。它是唯一能同时给出
+     *    **数字版本号**与**可直连的下载地址**的通路，国内网络下也最稳，因此排在所有 GitHub 通路之前；
      *  - 阶段一只跑**不消耗 GitHub API 配额**的轻量通路；
      *  - 阶段二（仅当阶段一全挂）才动用 API，包括镜像代理的 API。
      *
-     * 为什么必须分阶段：未认证 API 配额是**按 IP 计**的 60 次/小时，共享出口（CGNAT/VPN）
+     * 为什么 GitHub 那两步必须分阶段：未认证 API 配额是**按 IP 计**的 60 次/小时，共享出口（CGNAT/VPN）
      * 极易打满。每次检查都无脑打 API，只会把这个共享额度耗得更快 ——
      * 实测中就出现过"直连能通但被限流、而免费通路其实可用"的情形。
+     *
+     * @param feedUrl 自建更新源地址（R2 上的 latest.json）；空串表示未配置，只走 GitHub 通路。
      */
-    suspend fun fetchLatest(): Result<Release> {
+    suspend fun fetchLatest(feedUrl: String = ""): Result<Release> {
+        var feedFailure: String? = null
+        val feed = feedUrl.trim()
+        if (feed.isNotEmpty()) {
+            val result = runCatching { fetchViaFeed(feed) }
+            result.getOrNull()?.let { return Result.success(it) }
+            feedFailure = "自建更新源 → ${result.exceptionOrNull()?.message ?: "失败"}"
+        }
+
         val free = race(freeSources())
         free.getOrNull()?.let { return Result.success(it) }
 
         val api = race(apiSources())
         api.getOrNull()?.let { return Result.success(it) }
 
-        val detail = listOf(free, api)
-            .mapNotNull { it.exceptionOrNull()?.message }
+        val detail = (listOfNotNull(feedFailure) +
+            listOf(free, api).mapNotNull { it.exceptionOrNull()?.message })
             .joinToString("\n")
         return Result.failure(IllegalStateException(detail))
     }
@@ -189,6 +203,48 @@ object UpdateChecker {
             val version = latest ?: error("版本列表为空")
             // jsDelivr 返回的是去掉 v 前缀的版本号，而仓库 tag 形如 v1.2.3
             return releaseFromConvention("v$version", version, notes = "")
+        }
+    }
+
+    /**
+     * 阶段零：自建更新源（R2 上的 latest.json）。
+     *
+     * 期望结构（由 .github/workflows/release.yml 生成）：
+     *   versionCode  数字，对应 Android 的 versionCode
+     *   versionName  如 1.1.6
+     *   downloadUrl  APK 的公开直链
+     *   releaseNotes / size / sha256  可选，缺失不影响
+     * 其中 downloadUrl 与 versionName 必填。
+     */
+    private fun fetchViaFeed(url: String): Release {
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) error("HTTP ${response.code}")
+
+            val json = JSONObject(text)
+            val version = normalizeVersion(json.optString("versionName"))
+            if (version.isBlank()) error("latest.json 缺少 versionName")
+
+            val downloadUrl = json.optString("downloadUrl").trim()
+            if (downloadUrl.isBlank()) error("latest.json 缺少 downloadUrl")
+
+            val name = downloadUrl.substringAfterLast('/')
+                .substringBefore('?')
+                .ifBlank { "$ASSET_PREFIX$version.apk" }
+
+            return Release(
+                version = version,
+                notes = json.optString("releaseNotes"),
+                apkUrl = downloadUrl,
+                apkName = name,
+                apkSize = json.optLong("size", -1L).takeIf { it > 0 } ?: -1L,
+                versionCode = json.optInt("versionCode", -1),
+            )
         }
     }
 
@@ -286,7 +342,8 @@ object UpdateChecker {
      * 在系统浏览器里打开它，若浏览器能拿到 JSON 而 App 拿不到，说明流量没走代理
      * （应用分流未包含本应用），而不是网络本身不通。
      */
-    fun diagnosticUrl(): String = "$API/repos/$REPO/releases/latest"
+    fun diagnosticUrl(feedUrl: String = ""): String =
+        feedUrl.trim().ifBlank { "$API/repos/$REPO/releases/latest" }
 
     // ---- 下载 ----
 
@@ -305,7 +362,10 @@ object UpdateChecker {
     ): File {
         val candidates = buildList {
             add(originalUrl)
-            MIRROR_PREFIXES.forEach { add("$it$originalUrl") }
+            // 只有 GitHub 直链才套镜像前缀；R2 / 自建域名的直链套上只会变成 404
+            if (isGitHubUrl(originalUrl)) {
+                MIRROR_PREFIXES.forEach { add("$it$originalUrl") }
+            }
         }
 
         val failures = mutableListOf<String>()
@@ -371,6 +431,13 @@ object UpdateChecker {
     private fun hostOf(url: String): String =
         runCatching { java.net.URI(url).host ?: url }.getOrDefault(url)
 
+    /** 是否 GitHub 域名的直链（只有这类才值得套加速镜像前缀） */
+    private fun isGitHubUrl(url: String): Boolean {
+        val host = runCatching { java.net.URI(url).host.orEmpty().lowercase() }.getOrDefault("")
+        return host == "github.com" || host.endsWith(".github.com") ||
+            host == "githubusercontent.com" || host.endsWith(".githubusercontent.com")
+    }
+
     /** 从 Atom 里取第一个 releases/tag/<tag> */
     private val TAG_IN_ATOM = Regex("""releases/tag/([^"<\s]+)""")
 
@@ -384,6 +451,18 @@ object UpdateChecker {
             if (a != b) return a > b
         }
         return false
+    }
+
+    /**
+     * 用 [Release] 判断是否比当前安装版本新。
+     *
+     * 优先比**数字版本号**（latest.json 通路提供）——它比语义化字符串更权威，
+     * 也不会被 "v" 前缀、构建后缀之类影响。老通路没有 versionCode 时退回字符串比较。
+     */
+    fun isNewer(release: Release, currentVersionCode: Int, currentVersionName: String): Boolean {
+        val remoteCode = release.versionCode
+        if (remoteCode > 0 && currentVersionCode > 0) return remoteCode > currentVersionCode
+        return isNewer(release.version, currentVersionName)
     }
 
     private fun parseVersion(version: String): List<Int>? =

@@ -19,6 +19,19 @@ val hasReleaseSigning = keystorePropsFile.exists() &&
     releaseStorePath != null &&
     rootProject.file(releaseStorePath).exists()
 
+// ---- 版本号与更新源 ----
+// CI（.github/workflows/release.yml）从 git tag 解析后以 -PversionCode= -PversionName= 传入；
+// 本地直接 ./gradlew assembleRelease 时走下面的默认值。
+val appVersionCode = (findProperty("versionCode") as String?)?.trim()?.toIntOrNull() ?: 9
+val appVersionName = (findProperty("versionName") as String?)?.trim().takeUnless { it.isNullOrBlank() } ?: "1.1.5"
+
+// 自建更新源（R2 上的 latest.json）地址。CI 用 -PupdateFeedUrl=$R2_PUBLIC_DOMAIN/latest.json 注入；
+// 本地构建为空 → App 只走 GitHub Release 通路（见 net/UpdateChecker.kt）。
+val updateFeedUrl = (findProperty("updateFeedUrl") as String?)?.trim().orEmpty()
+
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "com.dshbridge.app"
     compileSdk = 35
@@ -27,8 +40,9 @@ android {
         applicationId = "com.dshbridge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.1.5"
+        versionCode = appVersionCode
+        versionName = appVersionName
+        buildConfigField("String", "UPDATE_FEED_URL", updateFeedUrl.asBuildConfigString())
         resourceConfigurations += listOf("zh", "en")
     }
 

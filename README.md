@@ -17,7 +17,7 @@
 | 全屏会话页 | 无应用内标题栏，网页**铺满整屏**（edge-to-edge，系统栏透明覆盖）；支持网页发消息、传附件（文件选择器已接） |
 | **右缘左滑返回** | 在会话页从屏幕**右缘**向左滑 → 回首页 |
 | **记住密码 / 清除密码** | 每个链接单独保存 dsh-bridge 访问密码（打开时自动登录），也可随时清除 |
-| **应用内更新** | 启动时静默检查 GitHub 最新 Release；底部按钮显示「发现新版本 vX」，点击后自动下载并拉起系统安装器；右下角常驻显示当前版本 |
+| **应用内更新** | 启动时静默检查**自建更新源（R2 上的 latest.json，CI 构建时注入）**，失败再回落到 GitHub 最新 Release；底部按钮显示「发现新版本 vX」，点击后自动下载并拉起系统安装器；右下角常驻显示当前版本 |
 
 > 界面为**固定深色**（纯黑）：不跟随系统浅色模式，避免黑底与浅色组件/图标冲突。
 
@@ -107,6 +107,97 @@ apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 就无法再用同一签名更新已安装的 App —— 只能卸载重装，本机保存的链接与密码会一并丢失。
 
 `keystore.properties` 缺失时，release 会构建成**未签名** APK，便于他人 clone 后直接编译。
+
+## R2 自动发布（GitHub Actions）
+
+推送 `vX.Y.Z` tag 后，[.github/workflows/release.yml](.github/workflows/release.yml) 会自动：
+
+1. 解析 tag → `versionName=X.Y.Z`、`versionCode=X*10000+Y*100+Z`（数字版本号单调递增，App 直接比较它）；
+2. 用 Repository secrets 里的密钥库**签名**打包 `assembleRelease`；
+3. 上传 APK 到 R2：`releases/app-vX.Y.Z.apk`；
+4. 生成并上传 `latest.json`（App 的更新清单）；
+5. 用公网域名回读 `latest.json` 与 APK，确认公共访问已生效；
+6. 同时建一个 GitHub Release（附件名 `dsh-bridge-app-X.Y.Z.apk`），作为老版本 App 与备用通路的升级来源。
+
+### 一、R2 开公共访问（必须先做）
+
+App 与浏览器都要能匿名下载，所以桶必须可公开读取：
+
+- 测试用：R2 → 进入桶 → **Settings → Public access → R2.dev subdomain → Allow Access**，得到形如 `https://pub-xxxxxxxxxxxx.r2.dev` 的地址；
+- 正式用：同页 **Connect Custom Domain**，绑定如 `https://dl.example.com`（建议，国内通常更快也更稳定）。
+- 本项目当前已开启的 R2.dev 域名：`https://pub-b275276346ca49b39dbf6f6d65687153.r2.dev`（测试够用；正式发布建议换成自定义域名）。
+
+把最终地址作为 `R2_PUBLIC_DOMAIN` secret（**结尾不要带 `/`**）。工作流最后一步会直接拉取它下面的
+`latest.json`，不通就报错并提示这一节。
+
+> 注意：R2 的 **S3 API 端点**（`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`）是给 `aws s3 cp`
+> 上传用的，**不是**公开下载地址；两者别混。
+
+### 二、配置 Repository secrets
+
+`Settings → Secrets and variables → Actions → New repository secret`，或直接运行向导：
+
+```bash
+./scripts/setup-release.sh
+```
+
+需要 9 个：
+
+| Secret | 用途 / 从哪来 |
+|---|---|
+| `R2_ENDPOINT` | R2 的 S3 API 端点：`https://<ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | 桶名 |
+| `R2_ACCESS_KEY_ID` | R2 → API → Manage API Tokens 创建，权限 **Object Read & Write**，限定该桶 |
+| `R2_SECRET_ACCESS_KEY` | 同上，创建时只显示一次 |
+| `R2_PUBLIC_DOMAIN` | 第一步拿到的公开地址，如 `https://dl.example.com` |
+| `ANDROID_KEYSTORE_BASE64` | `base64 -w0 keystore/dsh-bridge-app.jks` 的结果 |
+| `ANDROID_KEYSTORE_PASSWORD` | `keystore.properties` 的 `storePassword` |
+| `ANDROID_KEY_ALIAS` | `keystore.properties` 的 `keyAlias` |
+| `ANDROID_KEY_PASSWORD` | `keystore.properties` 的 `keyPassword`（PKCS12 下与 storePassword 相同） |
+
+> `ANDROID_KEYSTORE_BASE64` 必须是**当前发布所用的同一密钥库**。换了密钥库，已安装的 App 会因为
+> 签名不一致而拒绝安装（只能卸载重装，本机保存的链接与密码会丢失）。密钥库请离线备份。
+
+### 三、发一个版本
+
+```bash
+# versionCode 由 tag 自动算，无需改 build.gradle.kts
+git tag v1.1.6
+git push origin v1.1.6
+```
+
+然后去仓库 **Actions → Build and Release to R2** 看进度；该次运行的 Summary 会列出本次版本、
+`latest.json` 地址与 APK 直链。
+
+### 四、验证
+
+1. GitHub Actions 全绿；
+2. R2 桶里能看到 `releases/app-v1.1.6.apk` 与 `latest.json`；
+3. 浏览器打开 `https://<R2_PUBLIC_DOMAIN>/latest.json`，返回的 `versionCode`/`versionName` 与 tag 一致；
+4. 手机上装旧版本（或先 `adb install -r` 装一个更早的 CI 包），启动后应提示更新并成功安装。
+
+`latest.json` 结构（`downloadUrl` 与 `versionName` 必填，其余可缺省）：
+
+```json
+{
+  "versionCode": 10106,
+  "versionName": "1.1.6",
+  "downloadUrl": "https://dl.example.com/releases/app-v1.1.6.apk",
+  "releaseNotes": "自动发布版本 1.1.6",
+  "size": 1234567,
+  "sha256": "..."
+}
+```
+
+### 五、本地复现 CI 构建
+
+```bash
+./gradlew :app:assembleRelease \
+  -PversionCode=10106 -PversionName=1.1.6 \
+  -PupdateFeedUrl=https://dl.example.com/latest.json
+```
+
+`build.gradle.kts` 里的默认版本（当前 `1.1.5` / `9`）只用于本地随手编译；正式发布一律以 tag 为准。
 
 ## 使用
 
@@ -224,7 +315,10 @@ POST /__dsh_bridge__/login     body: {"password":"..."}
   的横向手势。嫌不好触发可以调 `ui/EdgeBackLayout.kt` 的 `EDGE_WIDTH_DP` / `TRIGGER_DISTANCE_DP`。
 - **连通性探测宽松判定**：只要服务端返回任何 HTTP 响应就算"可达"。dsh-bridge 开了访问认证时
   未登录请求本来就是 401，把它当"不可达"会让状态点永远是灰的、反而误导。
-- **更新检查分两阶段竞速**（同一阶段内并行、谁先成功用谁，其余立即取消）：
+- **更新检查：自建源优先 + 两阶段 GitHub 兜底**。CI 构建时用 `-PupdateFeedUrl=...`
+  把 `BuildConfig.UPDATE_FEED_URL` 设成 `$R2_PUBLIC_DOMAIN/latest.json`；App 会**先**打这个自建源
+  —— 它同时给出数字版本号与可直连的下载地址，国内网络下最稳 —— 失败才回落到下面的 GitHub 通路。
+  本地构建（未注入）时直接走 GitHub 两阶段竞速（同一阶段内并行、谁先成功用谁，其余立即取消）：
 
   **阶段一 · 不消耗 GitHub API 配额**（优先，够用就不碰 API）
 
@@ -245,7 +339,8 @@ POST /__dsh_bridge__/login     body: {"password":"..."}
   极易打满，表现为 **HTTP 403**（注意 403 说明请求其实通了，只是被限流）。
   每次检查都无脑打 API 只会让共享额度耗得更快 —— 因此启动时的自动检查还加了 **6 小时节流**。
 
-- **APK 下载逐级降级**：直连 `github.com` → 各镜像前缀。**镜像不可信也没关系**：
+- **APK 下载逐级降级**：自建源直链，或 GitHub 直连 `github.com` → 各镜像前缀（镜像前缀只对 GitHub
+  域名的直链生效，R2 直链不会套）。**镜像不可信也没关系**：
   Android 安装时会校验签名，必须与已安装应用同一证书；App 还会比对发布信息里的文件大小。
   所以镜像无法把篡改过的安装包装进设备。
 - 因此仓库的 Release 附件名**必须**保持 `dsh-bridge-app-<version>.apk` 这一约定，
@@ -268,7 +363,7 @@ app/src/main/java/com/dshbridge/app/
 │   ├── BridgeAuth.kt            原生登录：POST /__dsh_bridge__/login
 │   ├── WebViewCookies.kt        会话 cookie 注入 WebView
 │   ├── Reachability.kt          连通性探测（供卡片状态点）
-│   ├── UpdateChecker.kt         查 GitHub 最新 Release + 下载 APK
+│   ├── UpdateChecker.kt         查自建 latest.json（优先）/ GitHub Release + 下载 APK
 │   └── ApkInstaller.kt          拉起系统安装器（FileProvider）
 ├── ui/
 │   ├── LinkAdapter.kt           卡片列表适配器

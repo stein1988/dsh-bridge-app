@@ -378,7 +378,7 @@ class MainActivity : AppCompatActivity() {
     /** 点按钮：已查到新版本就直接开始下载安装，否则先查一次。 */
     private fun onUpdateClicked() {
         val release = latestRelease
-        if (release != null && UpdateChecker.isNewer(release.version, BuildConfig.VERSION_NAME)) {
+        if (release != null && UpdateChecker.isNewer(release, BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME)) {
             downloadAndInstall(release)
         } else {
             checkForUpdate(userInitiated = true)
@@ -408,13 +408,13 @@ class MainActivity : AppCompatActivity() {
         binding.btnUpdate.setText(R.string.update_checking)
 
         lifecycleScope.launch {
-            val result = UpdateChecker.fetchLatest()
+            val result = UpdateChecker.fetchLatest(BuildConfig.UPDATE_FEED_URL)
             checkingUpdate = false
             binding.btnUpdate.isEnabled = true
 
             result.onSuccess { release ->
                 latestRelease = release
-                if (UpdateChecker.isNewer(release.version, BuildConfig.VERSION_NAME)) {
+                if (UpdateChecker.isNewer(release, BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME)) {
                     binding.btnUpdate.setText(getString(R.string.update_available, release.version))
                 } else {
                     binding.btnUpdate.setText(R.string.update_check)
@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity() {
         }
         dialogBinding.btnBrowserTest.setOnClickListener {
             val opened = runCatching {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.diagnosticUrl())))
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(UpdateChecker.diagnosticUrl(BuildConfig.UPDATE_FEED_URL))))
             }.isSuccess
             if (!opened) toast(getString(R.string.update_open_failed))
         }

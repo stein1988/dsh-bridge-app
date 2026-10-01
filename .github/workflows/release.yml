@@ -1,0 +1,260 @@
+name: Build and Release to R2
+
+# 推送 vMAJOR.MINOR.PATCH 形式的 tag 时触发，tag 同时是版本号唯一来源。
+# 例如：git tag v1.1.6 && git push origin v1.1.6
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 创建 GitHub Release（兼容 App 里原有的 GitHub 兜底通路）需要写权限；其余按最小权限只读。
+permissions:
+  contents: write
+
+# 同一个 tag 的重复推送排队而非并行，避免两个 job 抢着覆盖 latest.json。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # R2 + 签名密钥都是 Repository secrets。缺任何一个都立刻失败并指明名字，
+      # 而不是构建到一半才报错。配置方式见 README 的「R2 自动发布」一节。
+      - name: Validate required secrets
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_PUBLIC_DOMAIN: ${{ secrets.R2_PUBLIC_DOMAIN }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET R2_ENDPOINT R2_PUBLIC_DOMAIN \
+                      ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::缺少 Repository secrets: ${missing[*]}"
+            echo "可运行 scripts/setup-release.sh 逐项写入，或参考 README「R2 自动发布」。"
+            exit 1
+          fi
+          echo "9 个必需 secret 均已配置。"
+
+      # tag -> versionName / versionCode。
+      # versionCode = MAJOR*10000 + MINOR*100 + PATCH，单调递增，供 App 直接比较数字版本号。
+      - name: Resolve version from tag
+        id: version
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::tag '$TAG' 不符合 vMAJOR.MINOR.PATCH（例如 v1.1.6）"
+            exit 1
+          fi
+          MAJOR=$((10#${BASH_REMATCH[1]}))
+          MINOR=$((10#${BASH_REMATCH[2]}))
+          PATCH=$((10#${BASH_REMATCH[3]}))
+          VERSION_NAME="${MAJOR}.${MINOR}.${PATCH}"
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "版本：v$VERSION_NAME (versionCode=$VERSION_CODE)"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # 把 base64 里的 .jks 还原成文件，并生成 build.gradle.kts 读取的 keystore.properties。
+      # 注意：keystore.properties / *.jks 都在 .gitignore 里，不会进仓库。
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p keystore
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore/ci-release.jks
+          test -s keystore/ci-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=keystore/ci-release.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+          echo "签名密钥库已就绪。"
+
+      # 从 tag 注入 versionCode/versionName，并把 R2 公开域名编进 BuildConfig.UPDATE_FEED_URL，
+      # 这样 CI 产出的 APK 天然知道去哪查更新。
+      - name: Build signed release APK
+        env:
+          R2_PUBLIC_DOMAIN: ${{ secrets.R2_PUBLIC_DOMAIN }}
+        run: |
+          set -euo pipefail
+          BASE="${R2_PUBLIC_DOMAIN%/}"
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace \
+            -PversionCode=${{ steps.version.outputs.code }} \
+            -PversionName=${{ steps.version.outputs.name }} \
+            -PupdateFeedUrl="$BASE/latest.json"
+          test -f app/build/outputs/apk/release/app-release.apk
+
+      # 未签名的 APK 装不上（签名不一致会被系统拒绝），这里先拦住，避免把坏包传上 R2。
+      - name: Verify APK is signed
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then echo "::error::找不到 apksigner"; exit 1; fi
+          "$APKSIGNER" verify --print-certs "$APK"
+
+      # 统一产物命名：dsh-bridge-app-<version>.apk（沿用 App GitHub 兜底通路的命名约定），
+      # 同时生成 latest.json。
+      - name: Stage artifact and generate latest.json
+        id: meta
+        env:
+          R2_PUBLIC_DOMAIN: ${{ secrets.R2_PUBLIC_DOMAIN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.name }}"
+          CODE="${{ steps.version.outputs.code }}"
+          BASE="${R2_PUBLIC_DOMAIN%/}"
+          APK_KEY="releases/app-v${VERSION}.apk"
+          DOWNLOAD_URL="$BASE/$APK_KEY"
+
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/dsh-bridge-app-${VERSION}.apk"
+          APK="dist/dsh-bridge-app-${VERSION}.apk"
+          SIZE=$(stat -c%s "$APK")
+          SHA256=$(sha256sum "$APK" | awk '{print $1}')
+          NOTES=$(git log -1 --pretty=%s | tr -d '\r\n' | sed 's/"/\\"/g')
+
+          cat > latest.json <<EOF
+          {
+            "versionCode": $CODE,
+            "versionName": "$VERSION",
+            "downloadUrl": "$DOWNLOAD_URL",
+            "releaseNotes": "$NOTES",
+            "size": $SIZE,
+            "sha256": "$SHA256"
+          }
+          EOF
+
+          echo "apk_key=$APK_KEY" >> "$GITHUB_OUTPUT"
+          echo "download_url=$DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
+          cat latest.json
+
+      # ubuntu-latest 自带 aws CLI；万一镜像里没有，这里补装，避免卡在最后一步。
+      - name: Ensure AWS CLI
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+            unzip -q /tmp/awscliv2.zip -d /tmp
+            sudo /tmp/aws/install --update
+          fi
+          aws --version
+
+      # 先传 APK 再传 latest.json：客户端永远不会看到指向"还没上传完"的安装包的元数据。
+      - name: Upload APK to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "dist/dsh-bridge-app-${{ steps.version.outputs.name }}.apk" \
+            "s3://$R2_BUCKET/${{ steps.meta.outputs.apk_key }}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Upload latest.json to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          aws s3 cp latest.json "s3://$R2_BUCKET/latest.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type application/json \
+            --cache-control "no-cache, max-age=60"
+
+      # 直接用公网域名回读，提前暴露"桶没开公共访问 / 自定义域名没生效"这类问题。
+      - name: Verify public access
+        env:
+          R2_PUBLIC_DOMAIN: ${{ secrets.R2_PUBLIC_DOMAIN }}
+        run: |
+          set -euo pipefail
+          BASE="${R2_PUBLIC_DOMAIN%/}"
+
+          ok=0
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 20 "$BASE/latest.json" -o remote-latest.json; then ok=1; break; fi
+            echo "第 $attempt 次拉取失败，等待 5s 重试（R2 公共缓存可能尚未生效）..."
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::无法通过 $BASE 公开读取 latest.json。请在 R2 控制台开启公共访问（R2.dev 子域或自定义域名）。"
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          expected = ${{ steps.version.outputs.code }}
+          d = json.load(open('remote-latest.json'))
+          assert d['versionCode'] == expected, f"latest.json versionCode={d['versionCode']}，期望 {expected}"
+          print("公网 latest.json 校验通过：", d['versionName'], d['downloadUrl'])
+          PY
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -r 0-0 "$BASE/${{ steps.meta.outputs.apk_key }}")
+          case "$code" in
+            200|206) echo "公网 APK 直链可下载（HTTP $code）" ;;
+            *) echo "::error::APK 公网直链返回 HTTP $code"; exit 1 ;;
+          esac
+
+      # 同时建 GitHub Release：老版本 App 只认 GitHub 通路，这一步保证它们也能升级到本版本。
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ steps.version.outputs.name }}
+          body: |
+            自动发布版本 v${{ steps.version.outputs.name }}（versionCode ${{ steps.version.outputs.code }}）
+
+            - R2 latest.json: ${{ secrets.R2_PUBLIC_DOMAIN }}/latest.json
+            - APK: ${{ steps.meta.outputs.download_url }}
+          files: dist/dsh-bridge-app-${{ steps.version.outputs.name }}.apk
+          fail_on_unmatched_files: true
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Release v${{ steps.version.outputs.name }}"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "|---|---|"
+            echo "| versionCode | ${{ steps.version.outputs.code }} |"
+            echo "| latest.json | ${{ secrets.R2_PUBLIC_DOMAIN }}/latest.json |"
+            echo "| APK | ${{ steps.meta.outputs.download_url }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
