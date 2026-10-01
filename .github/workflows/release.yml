@@ -232,6 +232,37 @@ jobs:
             *) echo "::error::APK 公网直链返回 HTTP $code"; exit 1 ;;
           esac
 
+      # R2 空间有限：新版校验通过后，删掉 releases/ 下的旧 APK，只留本次这个。
+      # 只删 .apk、且显式跳过当前 key，不会碰 latest.json 或其它任何对象。
+      - name: Prune old APKs from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          KEEP="${{ steps.meta.outputs.apk_key }}"
+          echo "保留：$KEEP"
+          keys=$(aws s3api list-objects-v2 \
+            --bucket "$R2_BUCKET" --prefix "releases/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --query "Contents[].Key" --output text)
+          if [ -z "$keys" ]; then echo "releases/ 下没有对象"; exit 0; fi
+          removed=0
+          for key in $keys; do
+            case "$key" in
+              *.apk) ;;
+              *) continue ;;
+            esac
+            if [ "$key" = "$KEEP" ]; then continue; fi
+            aws s3api delete-object --bucket "$R2_BUCKET" --key "$key" --endpoint-url "$R2_ENDPOINT" >/dev/null
+            echo "已删除旧 APK：$key"
+            removed=$((removed + 1))
+          done
+          echo "共清理 $removed 个旧 APK，保留 $KEEP"
+
       # 同时建 GitHub Release：老版本 App 只认 GitHub 通路，这一步保证它们也能升级到本版本。
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

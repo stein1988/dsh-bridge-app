@@ -117,7 +117,9 @@ apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 3. 上传 APK 到 R2：`releases/app-vX.Y.Z.apk`；
 4. 生成并上传 `latest.json`（App 的更新清单）；
 5. 用公网域名回读 `latest.json` 与 APK，确认公共访问已生效；
-6. 同时建一个 GitHub Release（附件名 `dsh-bridge-app-X.Y.Z.apk`），作为老版本 App 与备用通路的升级来源。
+6. **删除 R2 `releases/` 下的旧 APK**，只保留本次版本（R2 空间有限，旧包没有保留价值；
+   只删 `.apk` 且跳过当前 key，不会碰 `latest.json`）；
+7. 同时建一个 GitHub Release（附件名 `dsh-bridge-app-X.Y.Z.apk`），作为老版本 App 与备用通路的升级来源。
 
 ### 一、R2 开公共访问（必须先做）
 
